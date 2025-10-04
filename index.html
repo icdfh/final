@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Спасти друга — Phaser 3</title>
+  <style>
+    html, body { height: 100%; }
+    body { margin: 0; background:#0b1220; font-family: system-ui, sans-serif; color:#e7ecff; }
+    #game { max-width: 960px; margin: 0 auto; display: block; }
+    .credits { text-align:center; font-size:12px; color:#94a3b8; margin: 8px 0 16px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+</head>
+<body>
+  <div id="game"></div>
+  <div class="credits">Управление: ← → — ходьба, Space/W — прыжок, S — рестарт, M — меню</div>
+
+  <script>
+  const ASSETS = {
+    sky: 'https://labs.phaser.io/assets/skies/space3.png',
+    platform: 'https://labs.phaser.io/assets/platforms/platform.png',
+    star: 'https://labs.phaser.io/assets/demoscene/star.png',
+    bomb: 'https://labs.phaser.io/assets/sprites/bomb.png',
+    dude: 'https://labs.phaser.io/assets/sprites/dude.png',
+    goal: 'https://labs.phaser.io/assets/sprites/phaser3-logo.png',
+    pickup: 'https://labs.phaser.io/assets/audio/SoundEffects/p-ping.mp3',
+    death: 'https://labs.phaser.io/assets/audio/SoundEffects/shoot1.wav',
+  };
+
+  const LEVELS = [
+    {
+      name: 'Глава 1: Сигнал бедствия',
+      width: 2000,
+      platforms: [ [400,568,2], [600,400,0.7], [50,250,0.7], [750,220,0.7], [1200,500,0.8], [1450,360,0.7], [1700,260,0.7] ],
+      stars: [ [120,0],[620,0],[780,0],[1280,0],[1490,0],[1750,0] ],
+      bombs: [ [900,16], [1550,16] ],
+      goal: { x: 1900, y: 120 }
+    },
+    {
+      name: 'Глава 2: База дронов',
+      width: 2600,
+      platforms: [ [400,568,2.8], [300,420,0.6], [700,330,0.7], [1050,260,0.8], [1350,420,0.7], [1650,320,0.6], [1950,260,0.7], [2250,200,0.6] ],
+      stars: [ [300,0],[700,0],[1050,0],[1350,0],[1650,0],[1950,0],[2250,0] ],
+      bombs: [ [1150,16],[1450,16],[1750,16],[2050,16] ],
+      goal: { x: 2450, y: 140 }
+    }
+  ];
+
+  class BootScene extends Phaser.Scene {
+    constructor(){ super('Boot'); }
+    preload(){
+      this.load.image('sky', ASSETS.sky);
+      this.load.image('ground', ASSETS.platform);
+      this.load.image('star', ASSETS.star);
+      this.load.image('bomb', ASSETS.bomb);
+      this.load.image('goal', ASSETS.goal);
+      this.load.spritesheet('dude', ASSETS.dude, { frameWidth: 32, frameHeight: 48 });
+      this.load.audio('pickup', ASSETS.pickup);
+      this.load.audio('death', ASSETS.death);
+    }
+    create(){ this.scene.start('Menu'); }
+  }
+
+  class MenuScene extends Phaser.Scene {
+    constructor(){ super('Menu'); }
+    create(){
+      const { width, height } = this.scale;
+      this.add.image(0,0,'sky').setOrigin(0).setScale(1.2);
+      this.add.text(width/2, height*0.25, 'СПАСТИ ДРУГА', { fontSize: 48, color:'#e2e8f0' }).setOrigin(0.5);
+      this.add.text(width/2, height*0.42, 'Space/W — прыжок\n← → — движение\nS — рестарт, M — меню', { fontSize: 20, color:'#cbd5e1', align:'center' }).setOrigin(0.5);
+      const btn = this.add.text(width/2, height*0.7, 'НАЧАТЬ', { fontSize: 28, backgroundColor:'#0ea5e9', padding:{x:16,y:8} }).setOrigin(0.5).setInteractive();
+      btn.on('pointerdown', ()=> this.scene.start('Story'));
+      this.input.keyboard.on('keydown-ENTER', ()=> this.scene.start('Story'));
+    }
+  }
+
+  class StoryScene extends Phaser.Scene {
+    constructor(){ super('Story'); }
+    create(){
+      const { width, height } = this.scale;
+      this.add.image(0,0,'sky').setOrigin(0).setScale(1.2);
+      this.add.text(width/2, height*0.2, 'СЮЖЕТ', { fontSize: 40, color:'#fff' }).setOrigin(0.5);
+      this.add.text(width/2, height*0.45,
+        'Где-то в техногороде пропал твой друг.\nПередал сигнал бедствия и связь оборвалась.\nСобери энерго-звёзды, избегай дронов и найди портал!',
+        { fontSize: 22, color:'#cbd5e1', align:'center', wordWrap:{width:700} }).setOrigin(0.5);
+      const btn = this.add.text(width/2, height*0.8, 'ВПЕРЁД', { fontSize: 26, backgroundColor:'#16a34a', padding:{x:16,y:8} }).setOrigin(0.5).setInteractive();
+      btn.on('pointerdown', ()=> this.scene.start('Game', { levelIndex:0, score:0 }));
+      this.input.keyboard.on('keydown-ENTER', ()=> this.scene.start('Game', { levelIndex:0, score:0 }));
+    }
+  }
+
+  class HUDScene extends Phaser.Scene {
+    constructor(){ super('HUD'); }
+    create(data){
+      this.scoreText = this.add.text(16, 12, 'Звёзды: 0', { fontSize: 20, color:'#fff' }).setScrollFactor(0);
+      this.levelText = this.add.text(16, 36, data?.levelName || '', { fontSize: 16, color:'#ccc' }).setScrollFactor(0);
+      this.events.on('updateScore', score=> this.scoreText.setText('Звёзды: ' + score));
+      this.events.on('setLevel', name=> this.levelText.setText(name));
+    }
+  }
+
+  class GameScene extends Phaser.Scene {
+    constructor(){ super('Game'); }
+    init(data){ this.levelIndex = data.levelIndex ?? 0; this.score = data.score ?? 0; }
+    create(){
+      const level = LEVELS[this.levelIndex];
+      this.physics.world.setBounds(0,0,level.width,600);
+      this.add.image(0,0,'sky').setOrigin(0).setScale(1.4).setScrollFactor(0.2);
+
+      this.platforms = this.physics.add.staticGroup();
+      this.platforms.create(400,568,'ground').setScale(2).refreshBody();
+      this.platforms.create(1200,568,'ground').setScale(2).refreshBody();
+      for(const [x,y,s] of level.platforms){ this.platforms.create(x,y,'ground').setScale(s).refreshBody(); }
+
+      this.player = this.physics.add.sprite(100,450,'dude');
+      this.player.setBounce(0.1).setCollideWorldBounds(true);
+      this.anims.create({ key:'left', frames:this.anims.generateFrameNumbers('dude',{start:0,end:3}), frameRate:10, repeat:-1 });
+      this.anims.create({ key:'turn', frames:[{key:'dude',frame:4}], frameRate:20 });
+      this.anims.create({ key:'right', frames:this.anims.generateFrameNumbers('dude',{start:5,end:8}), frameRate:10, repeat:-1 });
+      this.physics.add.collider(this.player,this.platforms);
+
+      this.cameras.main.setBounds(0,0,level.width,600).startFollow(this.player);
+
+      this.stars = this.physics.add.group();
+      for(const [sx,sy] of level.stars){ let s=this.stars.create(sx,sy,'star'); s.setBounceY(Phaser.Math.FloatBetween(0.2,0.4)); }
+      this.physics.add.collider(this.stars,this.platforms);
+
+      this.bombs = this.physics.add.group();
+      for(const [bx,by] of level.bombs){ let b=this.bombs.create(bx,by,'bomb'); b.setBounce(1).setCollideWorldBounds(true).setVelocity(Phaser.Math.Between(-200,200),20); }
+      this.physics.add.collider(this.bombs,this.platforms);
+
+      this.goal = this.physics.add.image(level.goal.x, level.goal.y, 'goal').setScale(0.35).setImmovable(true);
+      this.goal.body.allowGravity = false;
+
+      if(!this.scene.isActive('HUD')) this.scene.launch('HUD',{levelName:level.name});
+      this.hud=this.scene.get('HUD'); this.hud.events.emit('setLevel',level.name); this.hud.events.emit('updateScore',this.score);
+
+      this.cursors=this.input.keyboard.createCursorKeys(); this.keyW=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+      this.pickupSfx=this.sound.add('pickup'); this.deathSfx=this.sound.add('death');
+
+      this.physics.add.overlap(this.player,this.stars,this.collectStar,null,this);
+      this.physics.add.collider(this.player,this.bombs,this.hitBomb,null,this);
+      this.physics.add.overlap(this.player,this.goal,this.reachGoal,null,this);
+
+      this.input.keyboard.on('keydown-S',()=>this.scene.restart({levelIndex:this.levelIndex,score:this.score}));
+      this.input.keyboard.on('keydown-M',()=>{this.scene.stop('HUD'); this.scene.start('Menu');});
+    }
+    collectStar(player,star){ star.disableBody(true,true); this.pickupSfx.play(); this.score+=10; this.hud.events.emit('updateScore',this.score); }
+    hitBomb(player){ this.deathSfx.play(); this.physics.pause(); player.setTint(0xff0000).anims.play('turn'); this.time.delayedCall(600,()=>this.scene.start('GameOver',{levelIndex:this.levelIndex,score:this.score})); }
+    reachGoal(){ this.levelIndex<LEVELS.length-1?this.scene.start('LevelComplete',{levelIndex:this.levelIndex,score:this.score}):this.scene.start('Win',{score:this.score}); }
+    update(){ const onFloor=this.player.body.blocked.down||this.player.body.touching.down;
+      if(this.cursors.left.isDown){ this.player.setVelocityX(-200).anims.play('left',true); }
+      else if(this.cursors.right.isDown){ this.player.setVelocityX(200).anims.play('right',true); }
+      else{ this.player.setVelocityX(0).anims.play('turn'); }
+      if((Phaser.Input.Keyboard.JustDown(this.cursors.space)||Phaser.Input.Keyboard.JustDown(this.keyW))&&onFloor){ this.player.setVelocityY(-360); } }
+  }
+
+  class LevelCompleteScene extends Phaser.Scene {
+    constructor(){ super('LevelComplete'); }
+    init(d){ this.levelIndex=d.levelIndex; this.score=d.score; }
+    create(){
+      const {width,height}=this.scale; this.add.image(0,0,'sky').setOrigin(0).setScale(1.2);
+      this.add.text(width/2,height*0.3,'УРОВЕНЬ ПРОЙДЕН',{fontSize:42,color:'#fff'}).setOrigin(0.5);
+      this.add.text(width/2,height*0.45,`Очки: ${this.score}`,{fontSize:24,color:'#ccc'}).setOrigin(0.5);
+      const btn=this.add.text(width/2,height*0.7,'СЛЕДУЮЩИЙ',{fontSize:26,backgroundColor:'#16a34a',padding:{x:16,y:8}}).setOrigin(0.5).setInteractive();
+      btn.on('pointerdown',()=>this.scene.start('Game',{levelIndex:this.levelIndex+1,score:this.score}));
+      this.input.keyboard.on('keydown-ENTER',()=>this.scene.start('Game',{levelIndex:this.levelIndex+1,score:this.score}));
+    }
+  }
+
+  class GameOverScene extends Phaser.Scene {
+    constructor(){ super('GameOver'); }
+    init(d){ this.levelIndex=d.levelIndex??0; this.score=d.score??0; }
+    create(){
+      const {width,height}=this.scale; this.add.image(0,0,'sky').setOrigin(0).setScale(1.2);
+      this.add.text(width/2,height*0.3,'НЕ ПОЛУЧИЛОСЬ',{fontSize:42,color:'#fca5a5'}).setOrigin(0.5);
+      this.add.text(width/2,height*0.45,`Очки: ${this.score}`,{fontSize:22,color:'#fff'}).setOrigin(0.5);
+      const retry=this.add.text(width/2,height*0.65,'ЕЩЁ РАЗ',{fontSize:26,backgroundColor:'#0ea5e9',padding:{x:16,y:8}}).setOrigin(0.5).setInteractive();
+      retry.on('pointerdown',()=>this.scene.start('Game',{levelIndex:this.levelIndex,score:this.score}));
+      const menu=this.add.text(width/2,height*0.8,'МЕНЮ',{fontSize:22,backgroundColor:'#334155',padding:{x:16,y:8}}).setOrigin(0.5).setInteractive();
+      menu.on('pointerdown',()=>{this.scene.stop('HUD'); this.scene.start('Menu');});
+    }
+  }
+
+  class WinScene extends Phaser.Scene {
+    constructor(){ super('Win'); }
+    init(d){ this.score=d.score??0; }
+    create(){
+      const {width,height}=this.scale; this.add.image(0,0,'sky').setOrigin(0).setScale(1.2);
+      this.add.text(width/2,height*0.25,'ПОБЕДА!',{fontSize:48,color:'#bbf7d0'}).setOrigin(0.5);
+      this.add.text(width/2,height*0.45,'Ты добрался до портала и спас друга!',{fontSize:22,color:'#fff'}).setOrigin(0.5);
+      this.add.text(width/2,height*0.6,`Очки: ${this.score}`,{fontSize:22,color:'#ccc'}).setOrigin(0.5);
+      const again=this.add.text(width/2,height*0.8,'СНОВА',{fontSize:26,backgroundColor:'#0ea5e9',padding:{x:16,y:8}}).setOrigin(0.5).setInteractive();
+      again.on('pointerdown',()=>{this.scene.stop('HUD'); this.scene.start('Menu');});
+    }
+  }
+
+  const config = {
+    type: Phaser.AUTO,
+    parent: 'game',
+    width: 960,
+    height: 600,
+    physics: { default: 'arcade', arcade: { gravity:{y:500}, debug:false } },
+    scene: [BootScene, MenuScene, StoryScene, GameScene, LevelCompleteScene, GameOverScene, WinScene, HUDScene]
+  };
+  new Phaser.Game(config);
+  </script>
+</body>
+</html>
